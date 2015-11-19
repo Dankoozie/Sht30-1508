@@ -5184,10 +5184,82 @@ extern unsigned char __resetbits;
 extern __bit __powerdown;
 extern __bit __timeout;
 
+# 4 "/opt/mmplabv310/xc8/include/__size_t.h"
+typedef unsigned size_t;
 
-# 14 "main.c"
+# 7 "/opt/mmplabv310/xc8/include/stdlib.h"
+typedef unsigned short wchar_t;
+
+# 15
+typedef struct {
+int rem;
+int quot;
+} div_t;
+typedef struct {
+unsigned rem;
+unsigned quot;
+} udiv_t;
+typedef struct {
+long quot;
+long rem;
+} ldiv_t;
+typedef struct {
+unsigned long quot;
+unsigned long rem;
+} uldiv_t;
+
+# 53
+extern double atof(const char *);
+extern double strtod(const char *, const char **);
+extern int atoi(const char *);
+extern unsigned xtoi(const char *);
+extern long atol(const char *);
+extern long strtol(const char *, char **, int);
+
+extern int rand(void);
+extern void srand(unsigned int);
+extern void * calloc(size_t, size_t);
+extern div_t div(int numer, int denom);
+extern udiv_t udiv(unsigned numer, unsigned denom);
+extern ldiv_t ldiv(long numer, long denom);
+extern uldiv_t uldiv(unsigned long numer,unsigned long denom);
+extern unsigned long _lrotl(unsigned long value, unsigned int shift);
+extern unsigned long _lrotr(unsigned long value, unsigned int shift);
+extern unsigned int _rotl(unsigned int value, unsigned int shift);
+extern unsigned int _rotr(unsigned int value, unsigned int shift);
+
+
+
+
+extern void * malloc(size_t);
+extern void free(void *);
+extern void * realloc(void *, size_t);
+
+# 86
+extern int atexit(void (*)(void));
+extern char * getenv(const char *);
+extern char ** environ;
+extern int system(char *);
+extern void qsort(void *, size_t, size_t, int (*)(const void *, const void *));
+extern void * bsearch(const void *, void *, size_t, size_t, int(*)(const void *, const void *));
+extern int abs(int);
+extern long labs(long);
+
+extern char * itoa(char * buf, int val, int base);
+extern char * utoa(char * buf, unsigned val, int base);
+
+
+
+
+extern char * ltoa(char * buf, long val, int base);
+extern char * ultoa(char * buf, unsigned long val, int base);
+
+extern char * ftoa(float f, int * status);
+
+
+# 15 "main.c"
 #pragma config FOSC = INTOSC
-#pragma config WDTE = NSLEEP
+#pragma config WDTE = OFF
 #pragma config PWRTE = OFF
 #pragma config MCLRE = ON
 #pragma config CP = OFF
@@ -5203,12 +5275,15 @@ extern __bit __timeout;
 #pragma config LPBOR = ON
 #pragma config LVP = ON
 
-# 58
+# 59
 unsigned int ACK_bit;
 int i;
 unsigned char byte, tempbyte1, tempbyte2;
 unsigned char kirk;
 unsigned char tb1,tb2,kirk2;
+
+int CalcTemp(char,char);
+
 
 
 void init_io(void) {
@@ -5251,7 +5326,7 @@ TXREG = mydata_byte;
 void serial_init(void)
 {
 
-# 110
+# 114
 TXSTAbits.BRGH=1;
 TXSTAbits.TX9=0;
 TXSTAbits.TXEN = 1;
@@ -5350,7 +5425,7 @@ byte2 = SSPCON2 & 0x1F;
 } while( byte1 | byte2 );
 }
 
-# 210
+# 214
 void I2C_restart()
 {
 I2C_check_idle();
@@ -5377,6 +5452,30 @@ SSP1CON2bits.ACKEN=1;
 while(!PIR1bits.SSP1IF)
 {
 i = 1;
+}
+}
+
+
+int CalcTemp(char b1, char b2) {
+float rcv_val = (b1 << 8) + b2;
+float ans = rcv_val * 0.0015259;
+
+return (int) ans;
+}
+
+int CalcHumid(char b1, char b2) {
+float rcv_val = (b1 << 8) + b2;
+float ans = ((0.002670329 * rcv_val) - 45);
+ans = ans * 100;
+
+return (int) ans;
+}
+
+
+void UART_String(char* letters) {
+int i = 0;
+while(letters[i] != 0) {
+uart_xmit(letters[i++]);
 }
 }
 
@@ -5409,7 +5508,7 @@ I2C_Stop_Bit();
 
 _delay((unsigned long)((15)*(4000000/4000.0)));
 
-# 274
+# 302
 I2C_restart();
 I2C_Control_Read();
 RX_I2C_Data();
@@ -5452,10 +5551,25 @@ uart_xmit(tb2);
 _delay((unsigned long)((1)*(4000000/4000.0)));
 
 while (1) {
+char buf[8];
+int ct = CalcTemp(tempbyte1,tempbyte2);
 _delay((unsigned long)((500)*(4000000/4000.0)));
 LATCbits.LATC0 = 1;
 _delay((unsigned long)((500)*(4000000/4000.0)));
 LATCbits.LATC0 = 0;
+itoa(buf,ct,10);
+UART_String(buf);
+uart_xmit(10);
+uart_xmit(13);
+
+int ct = CalcHumid(tb1,tb2);
+itoa(buf,ct,10);
+UART_String(buf);
+uart_xmit(10);
+uart_xmit(13);
+
+
+
 }
 return;
 }

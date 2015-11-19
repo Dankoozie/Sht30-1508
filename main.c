@@ -9,10 +9,11 @@
 
 #include <xc.h>
 #include <pic16f1508.h>
+#include <stdlib.h>
 
 // CONFIG1
 #pragma config FOSC = INTOSC    // Oscillator Selection Bits (INTOSC oscillator: I/O function on CLKIN pin)
-#pragma config WDTE = NSLEEP    // Watchdog Timer Enable (WDT enabled while running and disabled in Sleep)
+#pragma config WDTE = OFF    // Watchdog Timer Enable (WDT enabled while running and disabled in Sleep)
 #pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
 #pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
 #pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
@@ -60,6 +61,9 @@ unsigned int ACK_bit;
  unsigned char byte, tempbyte1, tempbyte2;
  unsigned char kirk;
  unsigned char tb1,tb2,kirk2;
+ 
+ int CalcTemp(char,char);
+ 
  
  
 void init_io(void) {
@@ -236,6 +240,30 @@ void I2C_NAK(void)
  }
 }
 
+
+int CalcTemp(char b1, char b2) {
+    float rcv_val = (b1 << 8) + b2;
+    float ans = rcv_val *  0.0015259;
+    
+    return (int) ans;
+}
+
+int CalcHumid(char b1, char b2) {
+    float rcv_val = (b1 << 8) + b2;
+    float ans = ((0.002670329 * rcv_val) - 45);
+    ans = ans * 100;
+    
+    return (int) ans;
+}
+
+
+void UART_String(char* letters) {
+    int i = 0;
+    while(letters[i] != 0) {
+        uart_xmit(letters[i++]);
+    }
+}
+
 int main(void) {
 
 OSCCONbits.IRCF = 0x0d; //set OSCCON IRCF bits to select OSC frequency 4MHz
@@ -313,10 +341,25 @@ uart_xmit(tempbyte1); //send data off raw by UART
  __delay_ms(1); // delay.. just because
 
 while (1) {
- __delay_ms(500);
+    char buf[8];
+    int ct = CalcTemp(tempbyte1,tempbyte2);
+    __delay_ms(500);
  LATCbits.LATC0 = 1; //blinky
  __delay_ms(500);
  LATCbits.LATC0 = 0;
+ itoa(buf,ct,10);
+ UART_String(buf);
+ uart_xmit(10);
+ uart_xmit(13);
+ 
+ int ct = CalcHumid(tb1,tb2);
+ itoa(buf,ct,10);
+ UART_String(buf);
+ uart_xmit(10);
+ uart_xmit(13);
+ 
+ 
+ 
  }
  return;
 }
