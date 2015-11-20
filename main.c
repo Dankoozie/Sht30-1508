@@ -30,25 +30,7 @@
 #pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
 
 
-/* 
- * File: newmain.c
- * Author: Charles M Douvier
- * Contact at: http://iradan.com
- *
- * Created on January 26, 2014, 12:00 PM
- *
- * Target Device:
- * 16F1509 on Tautic 20 pin dev board
- *
- * Project:
- * I2C Testing with the TCN75A
- *
- * Version:
- * 0.1 Start Bit, and Control Byte ... check
- * 0.2 /ACK NAK and Stop ... check!
- * 0.3 works+232
- *
- */
+
 
 
 #define _XTAL_FREQ 4000000 //defined for delay
@@ -56,9 +38,19 @@
 #define SHT_addr = 0x44;
 
 
+typedef struct sht_return
+{
+    unsigned int vt;
+    unsigned int vh;
+    char crct;
+    char crch;
+    char setts;
+} Sht_rtn;
+
+
 unsigned int ACK_bit;
  int i;
- unsigned char byte, tempbyte1, tempbyte2;
+ unsigned char tempbyte1, tempbyte2;
  unsigned char kirk;
  unsigned char tb1,tb2,kirk2;
  
@@ -127,12 +119,6 @@ PIR1bits.RCIF=0; // make sure receive interrupt flag is clear
  INTCONbits.PEIE = 1; // Enable peripheral interrupt
  INTCONbits.GIE = 1; // enable global interrupt
 
-__delay_ms(50); // give time for voltage levels on board to settle
-
- uart_xmit('R'); // transmit some data
- uart_xmit('S');
- uart_xmit('T');
-
 }
 
 void I2C_ACK(void)
@@ -152,7 +138,7 @@ void Send_I2C_Data(unsigned int databyte)
 
 unsigned char RX_I2C_Data (void)
 {
-
+    char byte;
 RCEN = 1; // 
  while( RCEN ) continue;
  while( !BF ) continue;
@@ -256,31 +242,9 @@ int CalcHumid(char b1, char b2) {
     return (int) ans;
 }
 
-
-void UART_String(char* letters) {
-    int i = 0;
-    while(letters[i] != 0) {
-        uart_xmit(letters[i++]);
-    }
-}
-
-int main(void) {
-
-OSCCONbits.IRCF = 0x0d; //set OSCCON IRCF bits to select OSC frequency 4MHz
- OSCCONbits.SCS = 0x02; 
- OPTION_REGbits.nWPUEN = 0; //enable weak pullups (each pin must be enabled individually)
-
-init_io();
- serial_init();
-
-SSPCONbits.SSPM=0x08; // I2C Master mode, clock = Fosc/(4 * (SSPADD+1))
- SSPCONbits.SSPEN=1; // enable MSSP port
- SSPADD = 0x09; //figure out which one you can ditch sometime (probably either)
- SSP1ADD = 0x09; // 100KHz
- // **************************************************************************************
-
- __delay_ms(50); // let everything settle.
-
+Sht_rtn GetReading() {
+    Sht_rtn local;
+    unsigned char th,tl,hh,hl,crc1,crc2;
  I2C_Start_Bit(); // send start bit
  I2C_Control_Write(); // send control byte with read set
 
@@ -301,34 +265,63 @@ Send_I2C_Data(0x2C); //pointer
 
 I2C_restart(); //restart
  I2C_Control_Read();
- RX_I2C_Data(); //read high
- tempbyte1=byte;
+ 
+ //Read temp high and low bits, crc
+ th = RX_I2C_Data(); //read high
+   I2C_ACK(); //ACK
+ tl = RX_I2C_Data(); //read low
+  I2C_ACK(); //ACK
+ crc1 = RX_I2C_Data(); //read low
+ local.vt = (th<<8) + tl;
+ 
+ 
+ 
+ //Read humidity high and low bits
  I2C_ACK(); //ACK
- RX_I2C_Data(); //read low
- tempbyte2=byte;
- 
+ hh = RX_I2C_Data(); //read low
  I2C_ACK(); //ACK
- RX_I2C_Data(); //read low
- kirk=byte;
- 
+ hl = RX_I2C_Data(); //read low
  I2C_ACK(); //ACK
- RX_I2C_Data(); //read low
- tb1=byte;
- 
- I2C_ACK(); //ACK
- RX_I2C_Data(); //read low
- tb2=byte;
- 
- I2C_ACK(); //ACK
- RX_I2C_Data(); //read low
- kirk2=byte;
- 
- 
+ crc2 = RX_I2C_Data(); //read low
+ local.vh = (hh<<8) + hl;
  
  I2C_NAK(); //NAK
- 
  //I2C_restart();
  I2C_Stop_Bit(); // Send Stop Bit
+
+ return local;
+ 
+}
+
+
+
+
+
+void UART_String(char* letters) {
+    int i = 0;
+    while(letters[i] != 0) {
+        uart_xmit(letters[i++]);
+    }
+}
+
+int main(void) {
+    Sht_rtn received;
+OSCCONbits.IRCF = 0x0d; //set OSCCON IRCF bits to select OSC frequency 4MHz
+ OSCCONbits.SCS = 0x02; 
+ OPTION_REGbits.nWPUEN = 0; //enable weak pullups (each pin must be enabled individually)
+
+init_io();
+ serial_init();
+
+SSPCONbits.SSPM=0x08; // I2C Master mode, clock = Fosc/(4 * (SSPADD+1))
+ SSPCONbits.SSPEN=1; // enable MSSP port
+ SSPADD = 0x09; //figure out which one you can ditch sometime (probably either)
+ SSP1ADD = 0x09; // 100KHz
+ // **************************************************************************************
+
+ 
+ while(1){
+ __delay_ms(50); // let everything settle.
 
  
  
@@ -340,7 +333,8 @@ uart_xmit(tempbyte1); //send data off raw by UART
 
  __delay_ms(1); // delay.. just because
 
-while (1) {
+ received = GetReading();
+ unsigned int gah;
     char buf[8];
     int ct = CalcTemp(tempbyte1,tempbyte2);
     __delay_ms(500);
@@ -353,13 +347,18 @@ while (1) {
  uart_xmit(13);
  
  int ct = CalcHumid(tb1,tb2);
- itoa(buf,ct,10);
+ itoa(buf,received.vt,10);
+ UART_String(buf);
+ uart_xmit(10);
+ uart_xmit(13);
+ 
+  itoa(buf,received.vh,10);
+ 
  UART_String(buf);
  uart_xmit(10);
  uart_xmit(13);
  
  
  
- }
- return;
+    }
 }

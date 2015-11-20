@@ -5275,10 +5275,20 @@ extern char * ftoa(float f, int * status);
 #pragma config LPBOR = ON
 #pragma config LVP = ON
 
-# 59
+# 41
+typedef struct sht_return
+{
+unsigned int vt;
+unsigned int vh;
+char crct;
+char crch;
+char setts;
+} Sht_rtn;
+
+
 unsigned int ACK_bit;
 int i;
-unsigned char byte, tempbyte1, tempbyte2;
+unsigned char tempbyte1, tempbyte2;
 unsigned char kirk;
 unsigned char tb1,tb2,kirk2;
 
@@ -5326,7 +5336,7 @@ TXREG = mydata_byte;
 void serial_init(void)
 {
 
-# 114
+# 106
 TXSTAbits.BRGH=1;
 TXSTAbits.TX9=0;
 TXSTAbits.TXEN = 1;
@@ -5342,12 +5352,6 @@ PIR1bits.RCIF=0;
 PIE1bits.RCIE=1;
 INTCONbits.PEIE = 1;
 INTCONbits.GIE = 1;
-
-_delay((unsigned long)((50)*(4000000/4000.0)));
-
-uart_xmit('R');
-uart_xmit('S');
-uart_xmit('T');
 
 }
 
@@ -5368,7 +5372,7 @@ while(!PIR1bits.SSP1IF);
 
 unsigned char RX_I2C_Data (void)
 {
-
+char byte;
 RCEN = 1;
 while( RCEN ) continue;
 while( !BF ) continue;
@@ -5425,7 +5429,7 @@ byte2 = SSPCON2 & 0x1F;
 } while( byte1 | byte2 );
 }
 
-# 214
+# 200
 void I2C_restart()
 {
 I2C_check_idle();
@@ -5471,7 +5475,53 @@ ans = ans * 100;
 return (int) ans;
 }
 
+Sht_rtn GetReading() {
+Sht_rtn local;
+unsigned char th,tl,hh,hl,crc1,crc2;
+I2C_Start_Bit();
+I2C_Control_Write();
 
+if (!SSP1CON2bits.ACKSTAT)
+LATCbits.LATC1 = 0;
+
+Send_I2C_Data(0x2C);
+Send_I2C_Data(0x06);
+I2C_Stop_Bit();
+
+_delay((unsigned long)((15)*(4000000/4000.0)));
+
+# 266
+I2C_restart();
+I2C_Control_Read();
+
+
+th = RX_I2C_Data();
+I2C_ACK();
+tl = RX_I2C_Data();
+I2C_ACK();
+crc1 = RX_I2C_Data();
+local.vt = (th<<8) + tl;
+
+
+
+
+I2C_ACK();
+hh = RX_I2C_Data();
+I2C_ACK();
+hl = RX_I2C_Data();
+I2C_ACK();
+crc2 = RX_I2C_Data();
+local.vh = (hh<<8) + hl;
+
+I2C_NAK();
+
+I2C_Stop_Bit();
+
+return local;
+
+}
+
+# 300
 void UART_String(char* letters) {
 int i = 0;
 while(letters[i] != 0) {
@@ -5480,7 +5530,7 @@ uart_xmit(letters[i++]);
 }
 
 int main(void) {
-
+Sht_rtn received;
 OSCCONbits.IRCF = 0x0d;
 OSCCONbits.SCS = 0x02;
 OPTION_REGbits.nWPUEN = 0;
@@ -5494,51 +5544,9 @@ SSPADD = 0x09;
 SSP1ADD = 0x09;
 
 
+
+while(1){
 _delay((unsigned long)((50)*(4000000/4000.0)));
-
-I2C_Start_Bit();
-I2C_Control_Write();
-
-if (!SSP1CON2bits.ACKSTAT)
-LATCbits.LATC1 = 0;
-
-Send_I2C_Data(0x2C);
-Send_I2C_Data(0x06);
-I2C_Stop_Bit();
-
-_delay((unsigned long)((15)*(4000000/4000.0)));
-
-# 302
-I2C_restart();
-I2C_Control_Read();
-RX_I2C_Data();
-tempbyte1=byte;
-I2C_ACK();
-RX_I2C_Data();
-tempbyte2=byte;
-
-I2C_ACK();
-RX_I2C_Data();
-kirk=byte;
-
-I2C_ACK();
-RX_I2C_Data();
-tb1=byte;
-
-I2C_ACK();
-RX_I2C_Data();
-tb2=byte;
-
-I2C_ACK();
-RX_I2C_Data();
-kirk2=byte;
-
-
-
-I2C_NAK();
-
-
-I2C_Stop_Bit();
 
 
 
@@ -5550,7 +5558,8 @@ uart_xmit(tb2);
 
 _delay((unsigned long)((1)*(4000000/4000.0)));
 
-while (1) {
+received = GetReading();
+unsigned int gah;
 char buf[8];
 int ct = CalcTemp(tempbyte1,tempbyte2);
 _delay((unsigned long)((500)*(4000000/4000.0)));
@@ -5563,7 +5572,13 @@ uart_xmit(10);
 uart_xmit(13);
 
 int ct = CalcHumid(tb1,tb2);
-itoa(buf,ct,10);
+itoa(buf,received.vt,10);
+UART_String(buf);
+uart_xmit(10);
+uart_xmit(13);
+
+itoa(buf,received.vh,10);
+
 UART_String(buf);
 uart_xmit(10);
 uart_xmit(13);
@@ -5571,5 +5586,4 @@ uart_xmit(13);
 
 
 }
-return;
 }
