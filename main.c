@@ -35,8 +35,8 @@
 
 #define _XTAL_FREQ 4000000 //defined for delay
 #define device_address 0b1001000 // TCN75A Address (A012 =0)
-#define SHT_addr = 0x44;
-
+#define SHT_addr  0x44;
+#define CRC_POLY 0x31;
 
 typedef struct sht_return
 {
@@ -45,6 +45,8 @@ typedef struct sht_return
     char crct;
     char crch;
     char setts;
+    char crc_ok;
+    
 } Sht_rtn;
 
 
@@ -54,7 +56,7 @@ unsigned int ACK_bit;
  unsigned char kirk;
  unsigned char tb1,tb2,kirk2;
  
- int CalcTemp(char,char);
+
  
  
  
@@ -120,6 +122,39 @@ PIR1bits.RCIF=0; // make sure receive interrupt flag is clear
  INTCONbits.GIE = 1; // enable global interrupt
 
 }
+
+
+
+char checkCRC(unsigned char gen, unsigned char rcvd) {
+    int ix;
+    unsigned char revCRC = 0;
+    
+      for (ix = 0; ix < 8; ix++) {
+      if ((0x80 >> ix) & rcvd)
+        revCRC |= (1 << ix);
+    }
+  if (gen == revCRC) { return 1;}
+  else { return 0; }
+    
+    
+}
+
+void doCRC (unsigned char ch, unsigned char *crc)
+{
+    int ix;
+    unsigned char b7;
+    
+    for (ix = 0; ix < 8; ix++) {
+        b7 = ch ^ *crc;
+        *crc <<= 1;
+        ch <<= 1;
+        if (b7 & 0x80)
+            *crc ^= CRC_POLY;
+    }
+    return;
+}
+
+
 
 void I2C_ACK(void)
 {
@@ -227,9 +262,8 @@ void I2C_NAK(void)
 }
 
 
-int CalcTemp(char b1, char b2) {
-    float rcv_val = (b1 << 8) + b2;
-    float ans = rcv_val *  0.0015259;
+int CalcTemp(unsigned int rcv_val) {
+    float ans = rcv_val;
     
     return (int) ans;
 }
@@ -245,14 +279,16 @@ int CalcHumid(char b1, char b2) {
 Sht_rtn GetReading() {
     Sht_rtn local;
     unsigned char th,tl,hh,hl,crc1,crc2;
- I2C_Start_Bit(); // send start bit
+    unsigned char crc_g1 = 0xFF;
+    unsigned char crc_g2;
+    I2C_Start_Bit(); // send start bit
  I2C_Control_Write(); // send control byte with read set
 
 if (!SSP1CON2bits.ACKSTAT)
  LATCbits.LATC1 = 0; //device /ACked?
 
 Send_I2C_Data(0x2C); //pointer
- Send_I2C_Data(0x06); //1 shot, 12bit res
+Send_I2C_Data(0x06); //1 shot, 12bit res
  I2C_Stop_Bit();
 
  __delay_ms(15); //wait for conversion
@@ -269,11 +305,15 @@ I2C_restart(); //restart
  //Read temp high and low bits, crc
  th = RX_I2C_Data(); //read high
    I2C_ACK(); //ACK
+   doCRC(0xBE,&crc_g1);
  tl = RX_I2C_Data(); //read low
   I2C_ACK(); //ACK
+  doCRC(0xEF,&crc_g1);
+  
  crc1 = RX_I2C_Data(); //read low
  local.vt = (th<<8) + tl;
  
+ local.crc_ok = crc_g1;
  
  
  //Read humidity high and low bits
@@ -335,25 +375,25 @@ uart_xmit(tempbyte1); //send data off raw by UART
 
  received = GetReading();
  unsigned int gah;
-    char buf[8];
-    int ct = CalcTemp(tempbyte1,tempbyte2);
+    char buf[9];
     __delay_ms(500);
  LATCbits.LATC0 = 1; //blinky
  __delay_ms(500);
  LATCbits.LATC0 = 0;
- itoa(buf,ct,10);
  UART_String(buf);
  uart_xmit(10);
  uart_xmit(13);
  
  int ct = CalcHumid(tb1,tb2);
- itoa(buf,received.vt,10);
+ 
+ UART_String("Temperature: ");
+ itoa(buf,received.crc_ok,10);
  UART_String(buf);
  uart_xmit(10);
  uart_xmit(13);
  
-  itoa(buf,received.vh,10);
- 
+ UART_String("Humidity: ");
+  itoa(buf,received.vh,16);
  UART_String(buf);
  uart_xmit(10);
  uart_xmit(13);

@@ -5283,6 +5283,8 @@ unsigned int vh;
 char crct;
 char crch;
 char setts;
+char crc_ok;
+
 } Sht_rtn;
 
 
@@ -5292,10 +5294,7 @@ unsigned char tempbyte1, tempbyte2;
 unsigned char kirk;
 unsigned char tb1,tb2,kirk2;
 
-int CalcTemp(char,char);
-
-
-
+# 63
 void init_io(void) {
 
 ANSELA = 0x00;
@@ -5336,7 +5335,7 @@ TXREG = mydata_byte;
 void serial_init(void)
 {
 
-# 106
+# 108
 TXSTAbits.BRGH=1;
 TXSTAbits.TX9=0;
 TXSTAbits.TXEN = 1;
@@ -5354,6 +5353,39 @@ INTCONbits.PEIE = 1;
 INTCONbits.GIE = 1;
 
 }
+
+
+
+char checkCRC(unsigned char gen, unsigned char rcvd) {
+int ix;
+unsigned char revCRC = 0;
+
+for (ix = 0; ix < 8; ix++) {
+if ((0x80 >> ix) & rcvd)
+revCRC |= (1 << ix);
+}
+if (gen == revCRC) { return 1;}
+else { return 0; }
+
+
+}
+
+void doCRC (unsigned char ch, unsigned char *crc)
+{
+int ix;
+unsigned char b7;
+
+for (ix = 0; ix < 8; ix++) {
+b7 = ch ^ *crc;
+*crc <<= 1;
+ch <<= 1;
+if (b7 & 0x80)
+*crc ^= 0x31;;
+}
+return;
+}
+
+
 
 void I2C_ACK(void)
 {
@@ -5429,7 +5461,7 @@ byte2 = SSPCON2 & 0x1F;
 } while( byte1 | byte2 );
 }
 
-# 200
+# 235
 void I2C_restart()
 {
 I2C_check_idle();
@@ -5460,9 +5492,8 @@ i = 1;
 }
 
 
-int CalcTemp(char b1, char b2) {
-float rcv_val = (b1 << 8) + b2;
-float ans = rcv_val * 0.0015259;
+int CalcTemp(unsigned int rcv_val) {
+float ans = rcv_val;
 
 return (int) ans;
 }
@@ -5478,6 +5509,8 @@ return (int) ans;
 Sht_rtn GetReading() {
 Sht_rtn local;
 unsigned char th,tl,hh,hl,crc1,crc2;
+unsigned char crc_g1 = 0xFF;
+unsigned char crc_g2;
 I2C_Start_Bit();
 I2C_Control_Write();
 
@@ -5490,18 +5523,22 @@ I2C_Stop_Bit();
 
 _delay((unsigned long)((15)*(4000000/4000.0)));
 
-# 266
+# 302
 I2C_restart();
 I2C_Control_Read();
 
 
 th = RX_I2C_Data();
 I2C_ACK();
+doCRC(0xBE,&crc_g1);
 tl = RX_I2C_Data();
 I2C_ACK();
+doCRC(0xEF,&crc_g1);
+
 crc1 = RX_I2C_Data();
 local.vt = (th<<8) + tl;
 
+local.crc_ok = crc_g1;
 
 
 
@@ -5521,7 +5558,7 @@ return local;
 
 }
 
-# 300
+# 340
 void UART_String(char* letters) {
 int i = 0;
 while(letters[i] != 0) {
@@ -5560,25 +5597,25 @@ _delay((unsigned long)((1)*(4000000/4000.0)));
 
 received = GetReading();
 unsigned int gah;
-char buf[8];
-int ct = CalcTemp(tempbyte1,tempbyte2);
+char buf[9];
 _delay((unsigned long)((500)*(4000000/4000.0)));
 LATCbits.LATC0 = 1;
 _delay((unsigned long)((500)*(4000000/4000.0)));
 LATCbits.LATC0 = 0;
-itoa(buf,ct,10);
 UART_String(buf);
 uart_xmit(10);
 uart_xmit(13);
 
 int ct = CalcHumid(tb1,tb2);
-itoa(buf,received.vt,10);
+
+UART_String("Temperature: ");
+itoa(buf,received.crc_ok,10);
 UART_String(buf);
 uart_xmit(10);
 uart_xmit(13);
 
-itoa(buf,received.vh,10);
-
+UART_String("Humidity: ");
+itoa(buf,received.vh,16);
 UART_String(buf);
 uart_xmit(10);
 uart_xmit(13);
