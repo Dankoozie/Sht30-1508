@@ -99,7 +99,7 @@ void serial_init(void)
  // For 8 bit Async mode with BRGH=0: Desired Baud rate = Fosc/64([SPBRGH:SPBRGL]+1)
  // For 8 bit Async mode with BRGH=1: Desired Baud rate = Fosc/16([SPBRGH:SPBRGL]+1)
 
- TXSTAbits.BRGH=1; // select low speed Baud Rate (see baud rate calcs below)
+ TXSTAbits.BRGH=0; // select low speed Baud Rate (see baud rate calcs below)
  TXSTAbits.TX9=0; // select 8 data bits
  TXSTAbits.TXEN = 1; // enable transmit
 
@@ -107,7 +107,7 @@ void serial_init(void)
  RCSTAbits.RX9=0; // select 8 data bits
  RCSTAbits.CREN=1; // receive enabled
 
-SPBRGL=25; // here is calculated value of SPBRGH and SPBRGL
+SPBRGL=103; // here is calculated value of SPBRGH and SPBRGL
  SPBRGH=0;
 
 PIR1bits.RCIF=0; // make sure receive interrupt flag is clear
@@ -225,7 +225,7 @@ int main(void) {
     char buf[9];
     
     
-OSCCONbits.IRCF = 0x0d; //set OSCCON IRCF bits to select OSC frequency 4MHz
+OSCCONbits.IRCF = 0x0e; //set OSCCON IRCF bits to select OSC frequency 8MHz
  OSCCONbits.SCS = 0x02; 
  OPTION_REGbits.nWPUEN = 0; //enable weak pullups (each pin must be enabled individually)
 
@@ -250,26 +250,23 @@ SSPCONbits.SSPM=0x08; // I2C Master mode, clock = Fosc/(4 * (SSPADD+1))
  
  
  
- UART_String("Temperature: ");
+ UART_String("\x1b[36mTemperature: \x1b[37m");
  itoa(buf,CalcTemp(received.raw_t),10);
  UART_String(buf);
- uart_xmit(10);
- uart_xmit(13);
+ uart_xmit(32);
  
- UART_String("Humidity: ");
+ UART_String("\x1b[32mHumidity: \x1b[37m");
   itoa(buf,CalcHumid(received.raw_h),10);
  UART_String(buf);
- uart_xmit(10);
- uart_xmit(13);
+ uart_xmit(32);
  
-  UART_String("Status: ");
+  UART_String("\x1b[31mStatus: \x1b[37m");
   itoa(buf,GetStatus,16);
  UART_String(buf);
- uart_xmit(10);
- uart_xmit(13);
+ uart_xmit(32);
  
  
- UART_String("CRC: ");
+ UART_String("\x1b[35mCRC: \x1b[37m");
  itoa(buf,received.crc_temp,16);
  UART_String(buf);
  uart_xmit(10);
