@@ -1,131 +1,131 @@
-#define _XTAL_FREQ 4000000
-#include <xc.h>
-#include <pic16f1508.h>
+#include "i2c.h"
+
+unsigned int ACK_bit;
+int i;
+
+void I2C_Init(void){
+    
+ TRISBbits.TRISB4 = 1; // RB4 I2C SDA, has to be set as an input
+ TRISBbits.TRISB5 = 1; // RB5 = nc
+ TRISBbits.TRISB6 = 1; // RB6 I2C SCLK, has to be set as an input
+ TRISBbits.TRISB7 = 0; // RS232 TX
+}
 
 
+void I2C_ACK(void)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSP1CON2bits.ACKDT=0; // clear the Acknowledge Data Bit - this means we are sending an Acknowledge or 'ACK'
+ SSP1CON2bits.ACKEN=1; // set the ACK enable bit to initiate transmission of the ACK bit to the serial eeprom
+ while(!PIR1bits.SSP1IF); // Wait for interrupt flag to go high indicating transmission is complete
+}
 
+void Send_I2C_Data(unsigned int databyte)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSPBUF = databyte; // send databyte
+ while(!PIR1bits.SSP1IF); // Wait for interrupt flag to go high indicating transmission is complete
+}
 
+unsigned char RX_I2C_Data (void)
+{
+ char byt;
+RCEN = 1; // 
+ while( RCEN ) continue;
+ while( !BF ) continue;
+ byt = SSPBUF;
+ return byt;
+}
 
-    /*
-    Function: I2CInit
-    Return:
-    Arguments:
-    Description: Initialize I2C in master mode, Sets the required baudrate
-    */
-    void I2CInit(void)
-    {
-        TRISA = 0b00100011;
-        TRISB = 0b01010000;
-        
-    SSPCONbits.SSPM=0x08; // I2C Master mode, clock = Fosc/(4 * (SSPADD+1))
-     SSPCONbits.SSPEN=1; // enable MSSP port
-     SSPADD = 0x09; //figure out which one you can ditch sometime (probably either)
-    SSP1ADD = 0x09; // 100KHz
-    }
+void I2C_Control_Write(void)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSP1BUF = 0x44 << 1; // send the control byte (90 TCN75, EF BMP085)
+ while(!PIR1bits.SSP1IF) // Wait for interrupt flag to go high indicating transmission is complete
+ {
+ i = 1;
+ // place to add a breakpoint if needed
+ }
+ PIR1bits.SSP1IF=0;
+
+}
+
+void I2C_Control_Read(void)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSP1BUF = (0x44 << 1) + 1; // send the control byte (90 TCN75, EF BMP085)
+ while(!PIR1bits.SSP1IF){ // Wait for interrupt flag to go high indicating transmission is complete
+     i = 1;
+ }
      
-    /*
-    Function: I2CStart
-    Return:
-    Arguments:
-    Description: Send a start condition on I2C Bus
-    */
-    void I2CStart()
-    {
-    PIR1bits.SSP1IF=0; // clear SSP interrupt bit
-    SSPCON2bits.SEN=1; // send start bit
-     while(!PIR1bits.SSP1IF); // Wait for the SSPIF bit to go back high before we load the data buffer
-    }
      
-    /*
-    Function: I2CStop
-    Return:
-    Arguments:
-    Description: Send a stop condition on I2C Bus
-    */
-    void I2CStop()
-    {
-    	PEN = 1;         /* Stop condition enabled */
-    	while(PEN);      /* Wait for stop condition to finish */
-                         /* PEN automatically cleared by hardware */
-    }
      
-    /*
-    Function: I2CRestart
-    Return:
-    Arguments:
-    Description: Sends a repeated start condition on I2C Bus
-    */
-    void I2CRestart()
-    {
-    	RSEN = 1;        /* Repeated start enabled */
-    	while(RSEN);     /* wait for condition to finish */
-    }
-     
-    /*
-    Function: I2CAck
-    Return:
-    Arguments:
-    Description: Generates acknowledge for a transfer
-    */
-    void I2CAck()
-    {
-    	ACKDT = 0;       /* Acknowledge data bit, 0 = ACK */
-    	ACKEN = 1;       /* Ack data enabled */
-    	while(ACKEN);    /* wait for ack data to send on bus */
-    }
-     
-    /*
-    Function: I2CNck
-    Return:
-    Arguments:
-    Description: Generates Not-acknowledge for a transfer
-    */
-    void I2CNak()
-    {
-    	ACKDT = 1;       /* Acknowledge data bit, 1 = NAK */
-    	ACKEN = 1;       /* Ack data enabled */
-    	while(ACKEN);    /* wait for ack data to send on bus */
-    }
-     
-    /*
-    Function: I2CWait
-    Return:
-    Arguments:
-    Description: wait for transfer to finish
-    */
-    void I2CWait()
-    {
-    	while ((SSPCON & 0x1F ) || ( SSP1STAT & 0x04 ) );
-        /* wait for any pending transfer */
-    }
-     
-    /*
-    Function: I2CSend
-    Return:
-    Arguments: dat - 8-bit data to be sent on bus
-               data can be either address/data byte
-    Description: Send 8-bit data on I2C bus
-    */
-    void I2CSend(unsigned char dat)
-    {
-    	SSP1BUF = dat;    /* Move data to SSPBUF */
-    	while(SSP1STATbits.BF | SSPSTATbits.R_nW);       /* wait till complete data is sent from buffer */
-    //	I2CWait();       /* wait for any pending transfer */
-    }
-     
-    /*
-    Function: I2CRead
-    Return:    8-bit data read from I2C bus
-    Arguments:
-    Description: read 8-bit data from I2C bus
-    */
-    unsigned char I2CRead(void)
-    {
-    	unsigned char temp;
-    /* Reception works if transfer is initiated in read mode */
-    	RCEN = 1;        /* Enable data reception */
-    	while(!BF);      /* wait for buffer full */
-    	temp = SSPBUF;   /* Read serial buffer and store in temp register */
-    	I2CWait();       /* wait to check any pending transfer */
-    	return temp;     /* Return the read data from bus */
-    }
+ PIR1bits.SSP1IF=0;
+ }
+
+void I2C_Start_Bit(void)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSPCON2bits.SEN=1; // send start bit
+ while(!PIR1bits.SSP1IF) // Wait for the SSPIF bit to go back high before we load the data buffer
+ {
+ i = 1;
+ }
+ PIR1bits.SSP1IF=0;
+}
+
+void I2C_check_idle()
+{
+ unsigned char byte1; // R/W status: Is a transfer in progress?
+ unsigned char byte2; // Lower 5 bits: Acknowledge Sequence, Receive, STOP, Repeated START, START
+
+do
+ {
+ byte1 = SSPSTAT & 0x04;
+ byte2 = SSPCON2 & 0x1F;
+ } while( byte1 | byte2 );
+}
+/*
+ * Send the repeated start message and wait repeated start to finish.
+ */
+void I2C_restart()
+{
+ I2C_check_idle();
+ RSEN = 1; // Reinitiate start
+ while( RSEN ) continue;
+}
+
+void I2C_Stop_Bit(void)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSPCON2bits.PEN=1; // send stop bit
+ while(!PIR1bits.SSP1IF)
+ {
+ i = 1;
+ // Wait for interrupt flag to go high indicating transmission is complete
+ }
+}
+
+void I2C_NAK(void)
+{
+ PIR1bits.SSP1IF=0; // clear SSP interrupt bit
+ SSP1CON2bits.ACKDT=1; // set the Acknowledge Data Bit- this means we are sending a No-Ack or 'NAK'
+ SSP1CON2bits.ACKEN=1; // set the ACK enable bit to initiate transmission of the ACK bit to the serial eeprom
+ while(!PIR1bits.SSP1IF) // Wait for interrupt flag to go high indicating transmission is complete
+ {
+ i = 1;
+ }
+}
+
+void I2C_Cmd(char b1, char b2){
+     //Send command
+ I2C_Start_Bit(); // send start bit
+ I2C_Control_Write(); // send control byte with read set
+
+if (!SSP1CON2bits.ACKSTAT)
+LATCbits.LATC1 = 0; //device /ACked
+Send_I2C_Data(b1); //F32D = status command
+Send_I2C_Data(b2); 
+ I2C_Stop_Bit();
+    
+}

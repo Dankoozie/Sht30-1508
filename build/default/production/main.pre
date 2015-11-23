@@ -1,17 +1,17 @@
 
 # 1 "main.c"
 
-# 26 "/opt/mmplabv310/xc8/include/htc.h"
+# 26 "/opt/microchip/xc8/v1.35/include/htc.h"
 extern const char __xc8_OPTIM_SPEED;
 
 extern double __fpnormalize(double);
 
 
-# 13 "/opt/mmplabv310/xc8/include/xc8debug.h"
+# 13 "/opt/microchip/xc8/v1.35/include/xc8debug.h"
 #pragma intrinsic(__builtin_software_breakpoint)
 extern void __builtin_software_breakpoint(void);
 
-# 49 "/opt/mmplabv310/xc8/include/pic16f1508.h"
+# 49 "/opt/microchip/xc8/v1.35/include/pic16f1508.h"
 extern volatile unsigned char INDF0 @ 0x000;
 
 asm("INDF0 equ 00h");
@@ -5167,7 +5167,7 @@ extern volatile __bit nTO @ (((unsigned) &STATUS)*8) + 4;
 extern volatile __bit nWPUEN @ (((unsigned) &OPTION_REG)*8) + 7;
 
 
-# 27 "/opt/mmplabv310/xc8/include/pic.h"
+# 27 "/opt/microchip/xc8/v1.35/include/pic.h"
 #pragma intrinsic(__nop)
 extern void __nop(void);
 
@@ -5184,10 +5184,10 @@ extern unsigned char __resetbits;
 extern __bit __powerdown;
 extern __bit __timeout;
 
-# 4 "/opt/mmplabv310/xc8/include/__size_t.h"
+# 4 "/opt/microchip/xc8/v1.35/include/__size_t.h"
 typedef unsigned size_t;
 
-# 7 "/opt/mmplabv310/xc8/include/stdlib.h"
+# 7 "/opt/microchip/xc8/v1.35/include/stdlib.h"
 typedef unsigned short wchar_t;
 
 # 15
@@ -5256,8 +5256,33 @@ extern char * ultoa(char * buf, unsigned long val, int base);
 
 extern char * ftoa(float f, int * status);
 
+# 11 "sht3x.h"
+void doCRC(char,char*);
+int CalcHumid(unsigned int);
+int CalcTemp(unsigned int);
 
-# 15 "main.c"
+# 11 "i2c.h"
+char const CommandB1 = 0x2C;
+char const CommandB2 = 0x06;
+
+
+void I2C_Init(void);
+
+void I2C_ACK(void);
+void Send_I2C_Data(unsigned int);
+void I2C_Cmd(char b1, char b2);
+void I2C_Control_Write(void);
+unsigned char RX_I2C_Data (void);
+void Send_I2C_Data(unsigned int);
+void I2C_Control_Read(void);
+void I2C_Start_Bit(void);
+void I2C_check_idle(void);
+void I2C_restart();
+void I2C_Stop_Bit(void);
+void I2C_NAK(void);
+
+
+# 17 "main.c"
 #pragma config FOSC = INTOSC
 #pragma config WDTE = OFF
 #pragma config PWRTE = OFF
@@ -5275,26 +5300,19 @@ extern char * ftoa(float f, int * status);
 #pragma config LPBOR = ON
 #pragma config LVP = ON
 
-# 41
+# 44
 typedef struct sht_return
 {
-unsigned int vt;
-unsigned int vh;
-char crct;
-char crch;
+unsigned int raw_t;
+unsigned int raw_h;
+char crc_temp;
+char crc_hum;
 char setts;
 char crc_ok;
 
 } Sht_rtn;
 
-
-unsigned int ACK_bit;
-int i;
-unsigned char tempbyte1, tempbyte2;
-unsigned char kirk;
-unsigned char tb1,tb2,kirk2;
-
-# 63
+# 60
 void init_io(void) {
 
 ANSELA = 0x00;
@@ -5308,10 +5326,7 @@ TRISAbits.TRISA3 = 1;
 TRISAbits.TRISA4 = 1;
 TRISAbits.TRISA5 = 1;
 
-TRISBbits.TRISB4 = 1;
-TRISBbits.TRISB5 = 1;
-TRISBbits.TRISB6 = 1;
-TRISBbits.TRISB7 = 0;
+
 
 TRISCbits.TRISC0 = 0;
 TRISCbits.TRISC1 = 0;
@@ -5335,7 +5350,7 @@ TXREG = mydata_byte;
 void serial_init(void)
 {
 
-# 108
+# 102
 TXSTAbits.BRGH=1;
 TXSTAbits.TX9=0;
 TXSTAbits.TXEN = 1;
@@ -5354,211 +5369,94 @@ INTCONbits.GIE = 1;
 
 }
 
+# 125
+char GetStatus() {
+unsigned char bh,bl;
+unsigned char crc_gen = 0xFF;
+unsigned char crc_rcvd;
 
-
-char checkCRC(unsigned char gen, unsigned char rcvd) {
-int ix;
-unsigned char revCRC = 0;
-
-for (ix = 0; ix < 8; ix++) {
-if ((0x80 >> ix) & rcvd)
-revCRC |= (1 << ix);
-}
-if (gen == revCRC) { return 1;}
-else { return 0; }
-
-
-}
-
-void doCRC (unsigned char ch, unsigned char *crc)
-{
-int ix;
-unsigned char b7;
-
-for (ix = 0; ix < 8; ix++) {
-b7 = ch ^ *crc;
-*crc <<= 1;
-ch <<= 1;
-if (b7 & 0x80)
-*crc ^= 0x31;;
-}
-return;
-}
-
-
-
-void I2C_ACK(void)
-{
-PIR1bits.SSP1IF=0;
-SSP1CON2bits.ACKDT=0;
-SSP1CON2bits.ACKEN=1;
-while(!PIR1bits.SSP1IF);
-}
-
-void Send_I2C_Data(unsigned int databyte)
-{
-PIR1bits.SSP1IF=0;
-SSPBUF = databyte;
-while(!PIR1bits.SSP1IF);
-}
-
-unsigned char RX_I2C_Data (void)
-{
-char byte;
-RCEN = 1;
-while( RCEN ) continue;
-while( !BF ) continue;
-byte = SSPBUF;
-return byte;
-}
-
-void I2C_Control_Write(void)
-{
-PIR1bits.SSP1IF=0;
-SSP1BUF = 0x44 << 1;
-while(!PIR1bits.SSP1IF)
-{
-i = 1;
-
-}
-PIR1bits.SSP1IF=0;
-
-}
-
-void I2C_Control_Read(void)
-{
-PIR1bits.SSP1IF=0;
-SSP1BUF = (0x44 << 1) + 1;
-while(!PIR1bits.SSP1IF){
-i = 1;
-}
-
-
-
-PIR1bits.SSP1IF=0;
-}
-
-void I2C_Start_Bit(void)
-{
-PIR1bits.SSP1IF=0;
-SSPCON2bits.SEN=1;
-while(!PIR1bits.SSP1IF)
-{
-i = 1;
-}
-PIR1bits.SSP1IF=0;
-}
-
-void I2C_check_idle()
-{
-unsigned char byte1;
-unsigned char byte2;
-
-do
-{
-byte1 = SSPSTAT & 0x04;
-byte2 = SSPCON2 & 0x1F;
-} while( byte1 | byte2 );
-}
-
-# 235
-void I2C_restart()
-{
-I2C_check_idle();
-RSEN = 1;
-while( RSEN ) continue;
-}
-
-void I2C_Stop_Bit(void)
-{
-PIR1bits.SSP1IF=0;
-SSPCON2bits.PEN=1;
-while(!PIR1bits.SSP1IF)
-{
-i = 1;
-
-}
-}
-
-void I2C_NAK(void)
-{
-PIR1bits.SSP1IF=0;
-SSP1CON2bits.ACKDT=1;
-SSP1CON2bits.ACKEN=1;
-while(!PIR1bits.SSP1IF)
-{
-i = 1;
-}
-}
-
-
-int CalcTemp(unsigned int rcv_val) {
-float ans = rcv_val;
-
-return (int) ans;
-}
-
-int CalcHumid(char b1, char b2) {
-float rcv_val = (b1 << 8) + b2;
-float ans = ((0.002670329 * rcv_val) - 45);
-ans = ans * 100;
-
-return (int) ans;
-}
-
-Sht_rtn GetReading() {
-Sht_rtn local;
-unsigned char th,tl,hh,hl,crc1,crc2;
-unsigned char crc_g1 = 0xFF;
-unsigned char crc_g2;
-I2C_Start_Bit();
-I2C_Control_Write();
-
-if (!SSP1CON2bits.ACKSTAT)
-LATCbits.LATC1 = 0;
-
-Send_I2C_Data(0x2C);
-Send_I2C_Data(0x06);
-I2C_Stop_Bit();
-
-_delay((unsigned long)((15)*(4000000/4000.0)));
-
-# 302
+I2C_Cmd(0xF3,0x2D);
+_delay((unsigned long)((11)*(4000000/4000.0)));
 I2C_restart();
 I2C_Control_Read();
 
 
-th = RX_I2C_Data();
+bh = RX_I2C_Data();
 I2C_ACK();
-doCRC(0xBE,&crc_g1);
-tl = RX_I2C_Data();
+doCRC(bh,&crc_gen);
+bl = RX_I2C_Data();
 I2C_ACK();
-doCRC(0xEF,&crc_g1);
-
-crc1 = RX_I2C_Data();
-local.vt = (th<<8) + tl;
-
-local.crc_ok = crc_g1;
+doCRC(bl,&crc_gen);
 
 
 
+crc_rcvd = RX_I2C_Data();
 I2C_ACK();
-hh = RX_I2C_Data();
-I2C_ACK();
-hl = RX_I2C_Data();
-I2C_ACK();
-crc2 = RX_I2C_Data();
-local.vh = (hh<<8) + hl;
 
 I2C_NAK();
 
 I2C_Stop_Bit();
 
+
+return (bh<<8) + bl;
+
+}
+
+
+
+
+Sht_rtn GetReading() {
+Sht_rtn local;
+unsigned char bh,bl;
+unsigned char crc_gen = 0xFF;
+
+
+I2C_Cmd(CommandB1,CommandB2);
+
+_delay((unsigned long)((15)*(4000000/4000.0)));
+I2C_restart();
+I2C_Control_Read();
+
+
+bh = RX_I2C_Data();
+I2C_ACK();
+doCRC(bh,&crc_gen);
+bl = RX_I2C_Data();
+I2C_ACK();
+doCRC(bl,&crc_gen);
+
+
+
+local.crc_temp = RX_I2C_Data();
+I2C_ACK();
+local.raw_t = (bh<<8) + bl;
+if(local.crc_temp == crc_gen) local.crc_ok = 1;
+
+crc_gen = 0xFF;
+
+
+bh = RX_I2C_Data();
+I2C_ACK();
+doCRC(bh,&crc_gen);
+bl = RX_I2C_Data();
+doCRC(bl,&crc_gen);
+I2C_ACK();
+local.crc_hum = RX_I2C_Data();
+local.raw_h = (bh<<8) + bl;
+I2C_NAK();
+
+I2C_Stop_Bit();
+
+if(local.crc_hum == crc_gen) local.crc_ok |= 2;
+
+
+
+
 return local;
 
 }
 
-# 340
+# 215
 void UART_String(char* letters) {
 int i = 0;
 while(letters[i] != 0) {
@@ -5568,12 +5466,17 @@ uart_xmit(letters[i++]);
 
 int main(void) {
 Sht_rtn received;
+unsigned int gah;
+char buf[9];
+
+
 OSCCONbits.IRCF = 0x0d;
 OSCCONbits.SCS = 0x02;
 OPTION_REGbits.nWPUEN = 0;
 
 init_io();
 serial_init();
+I2C_Init();
 
 SSPCONbits.SSPM=0x08;
 SSPCONbits.SSPEN=1;
@@ -5586,41 +5489,35 @@ while(1){
 _delay((unsigned long)((50)*(4000000/4000.0)));
 
 
-
-
-uart_xmit(tempbyte1);
-uart_xmit(tempbyte2);
-uart_xmit(tb1);
-uart_xmit(tb2);
-
-_delay((unsigned long)((1)*(4000000/4000.0)));
-
 received = GetReading();
-unsigned int gah;
-char buf[9];
-_delay((unsigned long)((500)*(4000000/4000.0)));
-LATCbits.LATC0 = 1;
-_delay((unsigned long)((500)*(4000000/4000.0)));
-LATCbits.LATC0 = 0;
-UART_String(buf);
-uart_xmit(10);
-uart_xmit(13);
 
-int ct = CalcHumid(tb1,tb2);
-
+# 253
 UART_String("Temperature: ");
-itoa(buf,received.crc_ok,10);
+itoa(buf,CalcTemp(received.raw_t),10);
 UART_String(buf);
 uart_xmit(10);
 uart_xmit(13);
 
 UART_String("Humidity: ");
-itoa(buf,received.vh,16);
+itoa(buf,CalcHumid(received.raw_h),10);
+UART_String(buf);
+uart_xmit(10);
+uart_xmit(13);
+
+UART_String("Status: ");
+itoa(buf,GetStatus,16);
 UART_String(buf);
 uart_xmit(10);
 uart_xmit(13);
 
 
+UART_String("CRC: ");
+itoa(buf,received.crc_temp,16);
+UART_String(buf);
+uart_xmit(10);
+uart_xmit(13);
 
+
+_delay((unsigned long)((5000)*(4000000/4000.0)));
 }
 }
