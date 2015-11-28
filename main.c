@@ -4,7 +4,7 @@
  *
  * Created on 07 November 2015, 01:21
  */
-#define _XTAL_FREQ 4000000
+#define _XTAL_FREQ 8000000
 
 
 #include <xc.h>
@@ -35,7 +35,7 @@
 
 
 
-#define _XTAL_FREQ 4000000 //defined for delay
+//#define _XTAL_FREQ 4000000 //defined for delay
 #define device_address 0b1001000 // TCN75A Address (A012 =0)
 
 
@@ -93,6 +93,8 @@ while(!TXSTAbits.TRMT); // make sure buffer full bit is high before transmitting
 }
 void serial_init(void)
 {
+    //Current setting = 1200bps
+    //9600 - TXSTAbits.BRGH=1,SPBRGL=25
 
 // calculate values of SPBRGL and SPBRGH based on the desired baud rate
  //
@@ -122,13 +124,12 @@ PIR1bits.RCIF=0; // make sure receive interrupt flag is clear
 
 
 
-char GetStatus() {
+unsigned int GetStatus() {
     unsigned char bh,bl;
     unsigned char crc_gen = 0xFF;
     unsigned char crc_rcvd;
 
 I2C_Cmd(0xF3,0x2D);
- __delay_ms(11); //wait for conversion
 I2C_restart(); //restart
 I2C_Control_Read();
  
@@ -166,7 +167,7 @@ Sht_rtn GetReading() {
  I2C_Cmd(CommandB1,CommandB2);
 
  __delay_ms(15); //wait for conversion
-I2C_restart(); //restart
+ I2C_restart(); //restart
 I2C_Control_Read();
  
  //Read temp high and low bits, crc
@@ -219,12 +220,34 @@ void UART_String(char* letters) {
     }
 }
 
+
+void zero_b(char bt){
+char lp;
+uart_xmit(48);
+uart_xmit(98);
+for(lp=8;lp>0;lp--){
+if((bt & (1<<lp-1)) != 0){
+uart_xmit(49);
+}
+else{uart_xmit(48);}
+}
+}
+
+void clear_status(){
+   I2C_Cmd(0x30,0x41); 
+}
+
+void Heater(char status){
+     if(status == 1) I2C_Cmd(0x30,0x6D);
+     else I2C_Cmd(0x30,0x66);
+}
+
 int main(void) {
     Sht_rtn received;
     unsigned int gah;
     char buf[9];
     
-    
+ 
 OSCCONbits.IRCF = 0x0e; //set OSCCON IRCF bits to select OSC frequency 8MHz
  OSCCONbits.SCS = 0x02; 
  OPTION_REGbits.nWPUEN = 0; //enable weak pullups (each pin must be enabled individually)
@@ -240,12 +263,15 @@ SSPCONbits.SSPM=0x08; // I2C Master mode, clock = Fosc/(4 * (SSPADD+1))
  // **************************************************************************************
 
  
+ clear_status();
+ 
+ Heater(0);
  while(1){
  __delay_ms(50); // let everything settle.
 
 
  received = GetReading();
-
+ 
 
  
  
@@ -261,8 +287,11 @@ SSPCONbits.SSPM=0x08; // I2C Master mode, clock = Fosc/(4 * (SSPADD+1))
  uart_xmit(32);
  
   UART_String("\x1b[31mStatus: \x1b[37m");
-  itoa(buf,GetStatus,16);
- UART_String(buf);
+  gah = GetStatus();
+  zero_b(gah >> 8);
+  uart_xmit(32);
+  zero_b(gah & 255);
+ 
  uart_xmit(32);
  
  
